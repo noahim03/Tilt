@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { httpsCallable } from "firebase/functions";
 import {
   CartesianGrid,
   Line,
@@ -10,8 +9,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { functions, type AnalyzePlayerResponse, type SummonerSuggestion } from "./firebase";
-import { REGIONS, type MatchSummary, type RegionValue, type Session, type TiltAnalysis, type TiltLevel } from "./lib/tilt";
+import { mockAnalyze } from "./lib/tilt-mock";
+import { REGIONS, type RegionValue, type TiltAnalysis, type TiltLevel } from "./lib/tilt";
+
+interface SummonerSuggestion {
+  riotId: string;
+  gameName: string;
+  tagLine: string;
+  region: string;
+  puuid: string;
+}
 
 const TILT_STYLES: Record<
   TiltLevel,
@@ -62,20 +69,14 @@ export default function App() {
       return;
     }
 
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(() => {
       setSearching(true);
-      try {
-        const searchSummoner = httpsCallable(functions, "searchSummoner");
-        const result = await searchSummoner({ query, region });
-        const data = result.data as { suggestions: SummonerSuggestion[] };
-        setSuggestions(data.suggestions);
+      window.setTimeout(() => {
+        setSuggestions(buildLocalSuggestions(query, region));
         setActiveSuggestion(0);
         setSuggestionsOpen(true);
-      } catch {
-        setSuggestions([]);
-      } finally {
         setSearching(false);
-      }
+      }, 160);
     }, 300);
 
     return () => window.clearTimeout(timer);
@@ -114,25 +115,15 @@ export default function App() {
     setError(null);
     setSuggestionsOpen(false);
 
-    try {
-      const analyzePlayer = httpsCallable(functions, "analyzePlayer");
-      const result = await analyzePlayer({
-        summonerName,
-        region: selectedRegion,
-        matchCount: 100,
-      });
-      setAnalysis(toTiltAnalysis(result.data as AnalyzePlayerResponse));
-    } catch (err: unknown) {
-      const firebaseErr = err as { code?: string; message?: string };
-      if (firebaseErr.code === "functions/unavailable") {
-        setError("Backend unavailable. Run npm run dev from the project root.");
-      } else {
-        setError(firebaseErr.message ?? "Could not analyze this Riot ID.");
-      }
-      setAnalysis(null);
-    } finally {
+    const regionLabel = labelFromRegionValue(selectedRegion);
+    window.setTimeout(() => {
+      const normalizedId = summonerName.includes("#")
+        ? summonerName
+        : `${summonerName}#${regionLabel}`;
+      setRiotId(normalizedId);
+      setAnalysis(mockAnalyze(normalizedId, regionLabel));
       setLoading(false);
-    }
+    }, 650);
   };
 
   const onSubmit = (e: React.FormEvent) => {
@@ -566,118 +557,6 @@ function FooterStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function toTiltAnalysis(response: AnalyzePlayerResponse): TiltAnalysis {
-  const [name, tag = response.region] = response.summonerName.split("#");
-  const latestSession = response.sessions[0] ?? null;
-  const sessions: Session[] = [...response.sessions].reverse().map((session) => {
-    const matches = session.games.map((game): MatchSummary => ({
-      matchId: game.matchId,
-      champion: game.championName,
-      championId: 0,
-      win: game.win,
-      kills: game.kills,
-      deaths: game.deaths,
-      assists: game.assists,
-      cs: Math.round(game.csPerMin * (game.gameDuration / 60)),
-      durationSec: game.gameDuration,
-      gameEndMs: game.gameStartTimestamp + game.gameDuration * 1000,
-      queue: "420",
-    }));
-
-    return {
-      startMs: matches[0]?.gameEndMs - (matches[0]?.durationSec ?? 0) * 1000,
-      endMs: matches[matches.length - 1]?.gameEndMs ?? Date.now(),
-      matches,
-    };
-  });
-
-  const trend =
-    latestSession?.games.map((game, index) => ({
-      game: index + 1,
-      kda: +game.kda.toFixed(2),
-      csPerMin: +game.csPerMin.toFixed(2),
-      win: game.win,
-      champion: game.championName,
-    })) ?? [];
-  const level = riskToLevel(response.overallTiltRisk);
-  const latestGames = latestSession?.games ?? [];
-  const kdaDelta = percentDelta(latestSession?.kdaTrend.early, latestSession?.kdaTrend.late);
-  const csPerMinDelta = percentDelta(latestSession?.csTrend.early, latestSession?.csTrend.late);
-  const currentStreak = getCurrentStreak(response);
-  const tiltInflectionIndex = getTiltInflectionIndex(latestGames, latestSession?.kdaTrend.early ?? 0);
-
-  return {
-    summoner: { name: name || response.summonerName, tag, region: response.region },
-    level,
-    headline:
-      level === "red"
-        ? "CRITICAL TILT"
-        : level === "yellow"
-          ? "WARNING SIGNS"
-          : "CLEAR HEAD",
-    verdict:
-      latestSession?.tiltReason ??
-      "No signs of tilt. Your stats are holding steady, so you are clear to keep queuing.",
-    metrics: {
-      currentStreak,
-      sessionsToday: sessions.filter((s) => isToday(s.endMs)).length,
-      winRateDelta: 0,
-      csPerMinDelta,
-      kdaDelta,
-      mentalTempC: level === "red" ? 86 : level === "yellow" ? 70 : 45,
-    },
-    sessions,
-    currentSession: sessions[sessions.length - 1] ?? null,
-    trend,
-    tiltInflectionIndex,
-  };
-}
-
-function riskToLevel(risk: AnalyzePlayerResponse["overallTiltRisk"]): TiltLevel {
-  if (risk === "high") return "red";
-  if (risk === "medium") return "yellow";
-  return "green";
-}
-
-function percentDelta(early = 0, late = 0) {
-  if (early <= 0) return 0;
-  return +(((late - early) / early) * 100).toFixed(1);
-}
-
-function getTiltInflectionIndex(
-  games: AnalyzePlayerResponse["sessions"][number]["games"],
-  earlyKda: number
-) {
-  if (games.length < 2 || earlyKda <= 0) return null;
-  const half = Math.ceil(games.length / 2);
-  for (let i = half; i < games.length; i++) {
-    if (games[i].kda < earlyKda * 0.7) return i;
-  }
-  return null;
-}
-
-function getCurrentStreak(response: AnalyzePlayerResponse) {
-  const recentGames = response.sessions.flatMap((session) => [...session.games].reverse());
-  if (recentGames.length === 0) return 0;
-  const firstWin = recentGames[0].win;
-  let streak = 0;
-  for (const game of recentGames) {
-    if (game.win !== firstWin) break;
-    streak++;
-  }
-  return firstWin ? streak : -streak;
-}
-
-function isToday(ms: number) {
-  const date = new Date(ms);
-  const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
-}
-
 function fmtStreak(streak: number) {
   if (streak === 0) return "-";
   return `${streak > 0 ? "W" : "L"}${Math.abs(streak)}`;
@@ -694,4 +573,30 @@ function sessionLabel(ms: number) {
 
 function regionValueFromLabel(label: string): RegionValue {
   return REGIONS.find((region) => region.label === label)?.value ?? DEFAULT_REGION;
+}
+
+function labelFromRegionValue(value: RegionValue) {
+  return REGIONS.find((region) => region.value === value)?.label ?? "NA1";
+}
+
+function buildLocalSuggestions(query: string, selectedRegion: RegionValue): SummonerSuggestion[] {
+  const clean = query.trim().replace(/\s+/g, " ");
+  if (!clean) return [];
+
+  const [namePart, tagPart] = clean.split("#");
+  const gameName = namePart.trim();
+  const selectedLabel = labelFromRegionValue(selectedRegion);
+  const tags = tagPart
+    ? [tagPart.trim().toUpperCase()]
+    : [selectedLabel, "NA1", "EUW", "KR"].filter(
+        (tag, index, all) => tag && all.indexOf(tag) === index
+      );
+
+  return tags.slice(0, 4).map((tag) => ({
+    riotId: `${gameName}#${tag}`,
+    gameName,
+    tagLine: tag,
+    region: selectedLabel,
+    puuid: `${gameName}-${tag}`,
+  }));
 }
