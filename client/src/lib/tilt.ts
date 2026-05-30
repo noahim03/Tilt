@@ -101,17 +101,19 @@ export function analyze(
   const winRateDelta = (todayWR - overallWR) * 100;
   const sessionsToday = sessions.filter((s) => s.endMs >= todayStart.getTime()).length;
 
-  // Trend within current session
   let csPerMinDelta = 0;
   let kdaDelta = 0;
   let tiltInflectionIndex: number | null = null;
-  const trend: TiltAnalysis["trend"] = [];
+  const trend: TiltAnalysis["trend"] = matches.map((m, i) => ({
+    game: i + 1,
+    kda: +kda(m).toFixed(2),
+    csPerMin: +cspm(m).toFixed(2),
+    win: m.win,
+    champion: m.champion,
+  }));
 
   if (currentSession && currentSession.matches.length >= 2) {
     const sm = currentSession.matches;
-    sm.forEach((m, i) => {
-      trend.push({ game: i + 1, kda: +kda(m).toFixed(2), csPerMin: +cspm(m).toFixed(2), win: m.win, champion: m.champion });
-    });
     const half = Math.floor(sm.length / 2);
     const first = sm.slice(0, half);
     const second = sm.slice(half);

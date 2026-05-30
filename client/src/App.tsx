@@ -1,24 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   CartesianGrid,
   Line,
   LineChart,
-  ReferenceDot,
+  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { mockAnalyze } from "./lib/tilt-mock";
-import { REGIONS, type RegionValue, type TiltAnalysis, type TiltLevel } from "./lib/tilt";
-
-interface SummonerSuggestion {
-  riotId: string;
-  gameName: string;
-  tagLine: string;
-  region: string;
-  puuid: string;
-}
+import { type Session, type TiltAnalysis, type TiltLevel } from "./lib/tilt";
 
 const TILT_STYLES: Record<
   TiltLevel,
@@ -47,108 +38,46 @@ const TILT_STYLES: Record<
   },
 };
 
-const DEFAULT_REGION: RegionValue = "na1";
+const TIMELINE_GAME_LIMIT = 15;
 
 export default function App() {
-  const [riotId, setRiotId] = useState("");
-  const [region, setRegion] = useState<RegionValue>(DEFAULT_REGION);
+  const [gameName, setGameName] = useState("");
+  const [tagLine, setTagLine] = useState("");
   const [analysis, setAnalysis] = useState<TiltAnalysis | null>(null);
-  const [suggestions, setSuggestions] = useState<SummonerSuggestion[]>([]);
-  const [activeSuggestion, setActiveSuggestion] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const searchWrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const query = riotId.trim();
-    if (query.length < 2) {
-      setSuggestions([]);
-      setSearching(false);
+  const runAnalysis = async (name = gameName, tag = tagLine) => {
+    const trimmedName = name.trim();
+    const trimmedTag = tag.trim();
+    if (!trimmedName) return;
+    if (!trimmedTag) {
+      setError("Enter a Riot tag.");
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      setSearching(true);
-      window.setTimeout(() => {
-        setSuggestions(buildLocalSuggestions(query, region));
-        setActiveSuggestion(0);
-        setSuggestionsOpen(true);
-        setSearching(false);
-      }, 160);
-    }, 300);
-
-    return () => window.clearTimeout(timer);
-  }, [riotId, region]);
-
-  useEffect(() => {
-    const closeSuggestions = (event: MouseEvent) => {
-      if (
-        searchWrapRef.current &&
-        !searchWrapRef.current.contains(event.target as Node)
-      ) {
-        setSuggestionsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", closeSuggestions);
-    return () => document.removeEventListener("mousedown", closeSuggestions);
-  }, []);
-
-  const selectSuggestion = (suggestion: SummonerSuggestion) => {
-    setRiotId(suggestion.riotId);
-    const suggestionRegion = regionValueFromLabel(suggestion.region);
-    setRegion(suggestionRegion);
-    setSuggestionsOpen(false);
-    void runAnalysis(suggestion.riotId, suggestionRegion);
-  };
-
-  const runAnalysis = async (
-    value = riotId,
-    selectedRegion: RegionValue = region
-  ) => {
-    const summonerName = value.trim();
-    if (!summonerName) return;
-
     setLoading(true);
     setError(null);
-    setSuggestionsOpen(false);
 
-    const regionLabel = labelFromRegionValue(selectedRegion);
-    window.setTimeout(() => {
-      const normalizedId = summonerName.includes("#")
-        ? summonerName
-        : `${summonerName}#${regionLabel}`;
-      setRiotId(normalizedId);
-      setAnalysis(mockAnalyze(normalizedId, regionLabel));
+    try {
+      const { account, analysis: riotAnalysis } = await analyzeRiotAccount(
+        trimmedName,
+        trimmedTag
+      );
+      setGameName(account.gameName);
+      setTagLine(account.tagLine);
+      setAnalysis(riotAnalysis);
+    } catch (err) {
+      setAnalysis(null);
+      setError(err instanceof Error ? err.message : "Could not validate this account.");
+    } finally {
       setLoading(false);
-    }, 650);
+    }
   };
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (suggestionsOpen && suggestions[activeSuggestion]) {
-      selectSuggestion(suggestions[activeSuggestion]);
-      return;
-    }
     void runAnalysis();
-  };
-
-  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!suggestionsOpen || suggestions.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActiveSuggestion((index) => (index + 1) % suggestions.length);
-    }
-
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveSuggestion((index) =>
-        index === 0 ? suggestions.length - 1 : index - 1
-      );
-    }
   };
 
   return (
@@ -168,84 +97,39 @@ export default function App() {
             onSubmit={onSubmit}
             className="flex items-center gap-1 bg-black/40 border border-border p-1 rounded-md"
           >
-            <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value as RegionValue)}
-              className="bg-transparent px-2 py-1.5 text-xs font-mono text-muted-foreground uppercase tracking-widest outline-none cursor-pointer"
-              disabled={loading}
-              aria-label="Region"
-            >
-              {REGIONS.map((r) => (
-                <option key={r.value} value={r.value} className="bg-background">
-                  {r.label}
-                </option>
-              ))}
-            </select>
-
-            <div className="relative" ref={searchWrapRef}>
+            <div className="relative">
               <input
                 type="text"
-                value={riotId}
+                value={gameName}
                 onChange={(e) => {
-                  setRiotId(e.target.value);
-                  setSuggestionsOpen(true);
+                  const value = e.target.value;
+                  const [name, tag] = value.split("#");
+                  setGameName(name);
+                  if (tag !== undefined) setTagLine(tag.toUpperCase());
                 }}
-                onFocus={() => setSuggestionsOpen(true)}
-                onKeyDown={handleInputKeyDown}
-                placeholder="GAMENAME#TAG"
+                placeholder="SUMMONER NAME"
                 spellCheck={false}
                 disabled={loading}
                 className="bg-transparent px-3 py-1.5 text-sm font-mono outline-none w-44 sm:w-56 focus:w-64 transition-all uppercase placeholder:text-muted-foreground/60"
               />
-
-              {suggestionsOpen &&
-                riotId.trim().length >= 2 &&
-                (searching || suggestions.length > 0) && (
-                  <div className="absolute top-[calc(100%+0.35rem)] right-0 w-[min(28rem,calc(100vw-2rem))] overflow-hidden rounded-sm border border-zinc-950 bg-zinc-800 shadow-2xl">
-                    <div className="border-b border-zinc-950 bg-zinc-900/60 px-3 py-2 text-xs font-extrabold">
-                      Summoner Profiles
-                    </div>
-                    {searching && (
-                      <div className="px-3 py-3 text-xs font-mono text-muted-foreground">
-                        Searching...
-                      </div>
-                    )}
-                    {!searching &&
-                      suggestions.map((suggestion, index) => (
-                        <button
-                          key={suggestion.puuid}
-                          type="button"
-                          onMouseEnter={() => setActiveSuggestion(index)}
-                          onClick={() => selectSuggestion(suggestion)}
-                          className={`flex w-full items-center gap-3 border-b border-zinc-950 px-3 py-2 text-left last:border-b-0 ${
-                            activeSuggestion === index
-                              ? "bg-zinc-700/70"
-                              : "bg-transparent hover:bg-zinc-700/60"
-                          }`}
-                        >
-                          <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-black text-sm font-extrabold text-white">
-                            {suggestion.gameName.slice(0, 1).toUpperCase()}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-extrabold text-tilt-red">
-                              {suggestion.gameName}
-                              <span className="ml-1 text-zinc-400">
-                                #{suggestion.tagLine}
-                              </span>
-                            </span>
-                            <span className="block text-[11px] font-mono uppercase text-zinc-400">
-                              {suggestion.region}
-                            </span>
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                )}
             </div>
+
+            <span className="px-1 text-xs font-mono font-bold text-muted-foreground">
+              #
+            </span>
+            <input
+              type="text"
+              value={tagLine}
+              onChange={(e) => setTagLine(e.target.value.toUpperCase())}
+              placeholder="TAG"
+              spellCheck={false}
+              disabled={loading}
+              className="bg-transparent px-2 py-1.5 text-sm font-mono outline-none w-20 uppercase placeholder:text-muted-foreground/60"
+            />
 
             <button
               type="submit"
-              disabled={loading || !riotId.trim()}
+              disabled={loading || !gameName.trim() || !tagLine.trim()}
               className="bg-foreground text-background px-4 py-1.5 text-xs font-bold uppercase tracking-tight hover:bg-white transition-colors cursor-pointer rounded-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? "Scanning..." : "Analyze"}
@@ -263,8 +147,8 @@ export default function App() {
       <footer className="border-t border-border mt-12 py-8">
         <div className="max-w-6xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex gap-8">
-            <FooterStat label="Data Source" value="RIOT GAMES API v5" />
-            <FooterStat label="Analysis Model" value="TILT-BETA-0.4" />
+            <FooterStat label="Data Source" value="RIOT MATCH API v5" />
+            <FooterStat label="Queue" value="RANKED SOLO/DUO" />
           </div>
           <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-[0.3em] text-center">
             Tilt Detector isn't endorsed by Riot Games.
@@ -279,39 +163,70 @@ function EmptyState({ error }: { error: string | null }) {
   return (
     <section className="animate-reveal">
       <div className="relative overflow-hidden bg-zinc-900/50 border border-border rounded-xl p-8 md:p-12">
-        <div className="max-w-2xl">
+        <div className="pointer-events-none absolute right-6 top-10 bottom-8 hidden w-80 lg:block xl:right-10 xl:w-96">
+          <img
+            src="/img/mad.png"
+            alt=""
+            className="absolute top-0 right-0 w-[62%] object-contain opacity-95 drop-shadow-2xl"
+          />
+          <img
+            src="/img/calm.png"
+            alt=""
+            className="absolute top-1/2 left-0 w-[66%] -translate-y-1/2 object-contain opacity-95 drop-shadow-2xl"
+          />
+          <img
+            src="/img/happy.png"
+            alt=""
+            className="absolute bottom-0 right-0 w-[62%] object-contain opacity-95 drop-shadow-2xl"
+          />
+        </div>
+
+        <div className="relative z-10 max-w-2xl">
           <span className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground mb-4 block">
             Session Analysis Verdict
           </span>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tighter mb-6 text-balance leading-none">
-            ARE YOU <span className="text-tilt-red italic">TILTING</span>?
+            ARE YOU{" "}
+            <span className="inline-flex items-baseline gap-3">
+              <span className="text-tilt-red italic">TILTING</span>
+              <span className="text-foreground">?</span>
+            </span>
           </h1>
           <p className="text-lg text-zinc-400 text-pretty leading-relaxed mb-6 border-l-2 border-tilt-red/50 pl-6">
-            Drop your Riot ID above and we'll scan your last 100 matches. We
-            group them into sessions, track KDA and CS/min degradation, and tell
-            you in plain English whether to keep queuing or log off before you
-            bleed more LP.
+            Tilt Detector analyzes your last 15 ranked games to tell you if your
+            performance is getting worse and whether you should log off before it
+            costs you more LP.
           </p>
+          <div className="mt-8 max-w-xl border border-border bg-black/25 rounded-xl p-5">
+            <h2 className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground mb-4">
+              How It Works
+            </h2>
+            <div className="grid gap-3">
+              {[
+                "Enter your summoner name",
+                "We analyze your last 15 ranked games",
+                "See if you're tilting and when it started",
+              ].map((step, index) => (
+                <div
+                  key={step}
+                  className="flex items-center gap-4 border border-border bg-black/35 rounded-lg px-4 py-3"
+                >
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-tilt-red text-background font-mono text-xs font-bold">
+                    {index + 1}
+                  </span>
+                  <span className="text-sm font-semibold text-zinc-200">
+                    {step}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
           {error && (
             <div className="mt-4 inline-flex items-center gap-2 border border-tilt-red/50 bg-tilt-red/10 text-tilt-red px-4 py-2 rounded-md font-mono text-xs">
               <span className="size-1.5 rounded-full bg-tilt-red animate-pulse-slow" />
               {error}
             </div>
           )}
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-xl">
-            {[
-              { k: "Format", v: "Name#TAG" },
-              { k: "Example", v: "Faker#KR1" },
-              { k: "Region", v: "Pick yours" },
-            ].map((x) => (
-              <div key={x.k} className="bg-black/40 border border-border p-3 rounded-lg">
-                <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mb-1">
-                  {x.k}
-                </div>
-                <div className="text-sm font-bold font-mono">{x.v}</div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </section>
@@ -334,6 +249,16 @@ function SkeletonState() {
 function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
   const styles = TILT_STYLES[analysis.level];
   const m = analysis.metrics;
+  const moodImage = getMoodImage(analysis);
+  const timelineSessions = getRecentTimelineSessions(
+    analysis.sessions,
+    TIMELINE_GAME_LIMIT
+  );
+  const timelineGameCount = timelineSessions.reduce(
+    (total, session) => total + session.matches.length,
+    0
+  );
+  const tiltScoreData = buildTiltScoreData(analysis.trend);
 
   return (
     <>
@@ -343,12 +268,18 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
             <div className="flex items-center gap-2">
               <div className={`size-2 rounded-full ${styles.dot} animate-pulse-slow`} />
               <span className={`font-mono text-[10px] tracking-widest font-bold uppercase ${styles.text}`}>
-                Live Diagnostics / {analysis.summoner.region}
+                Live Diagnostics
               </span>
             </div>
           </div>
 
-          <div className="max-w-2xl">
+          <img
+            src={moodImage.src}
+            alt={moodImage.alt}
+            className="pointer-events-none absolute right-8 bottom-0 hidden max-h-[82%] w-[34%] max-w-sm object-contain object-bottom opacity-95 drop-shadow-2xl lg:block"
+          />
+
+          <div className="relative z-10 max-w-2xl">
             <span className="font-mono text-xs uppercase tracking-[0.3em] text-muted-foreground mb-4 block">
               {analysis.summoner.name}#{analysis.summoner.tag} / Verdict
             </span>
@@ -379,7 +310,7 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
       <section className="animate-reveal" style={{ animationDelay: "150ms" }}>
         <div className="flex items-end justify-between mb-4">
           <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Session Timeline / {analysis.sessions.length} sessions
+            Session Timeline / Latest {timelineGameCount} games
           </h2>
           <div className="flex gap-4 font-mono text-[10px] uppercase text-zinc-500">
             <span className="flex items-center gap-1">
@@ -392,14 +323,19 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
         </div>
         <div className="bg-zinc-900/30 border border-border p-4 rounded-xl overflow-x-auto">
           <div className="flex gap-4 min-w-fit">
-            {analysis.sessions.map((s) => (
+            {timelineSessions.map((s) => (
               <div
                 key={`${s.startMs}-${s.endMs}`}
                 className="flex flex-col gap-2 pr-4 border-r border-border last:border-r-0 shrink-0"
               >
-                <span className="text-[10px] font-mono text-muted-foreground uppercase">
-                  {sessionLabel(s.endMs)} / {s.matches.length}g
-                </span>
+                <div className="space-y-1">
+                  <span className="block text-[10px] font-mono text-muted-foreground uppercase">
+                    {sessionLabel(s.endMs)} / {s.matches.length}g
+                  </span>
+                  <span className="block text-[10px] font-mono text-zinc-500 uppercase">
+                    {sessionTimestamp(s.endMs)}
+                  </span>
+                </div>
                 <div className="flex gap-1">
                   {s.matches.map((mm) => (
                     <div
@@ -424,13 +360,16 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
       <div className="grid md:grid-cols-3 gap-8 animate-reveal" style={{ animationDelay: "300ms" }}>
         <div className="md:col-span-2 space-y-4">
           <h2 className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            KDA + CS/Min / Current Session
+            Tilt Score / Ranked Games
           </h2>
           <div className="relative h-72 bg-zinc-900/30 border border-border rounded-xl p-4">
-            {analysis.trend.length >= 2 ? (
+            {tiltScoreData.length >= 2 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={analysis.trend} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
+                <LineChart data={tiltScoreData} margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
                   <CartesianGrid stroke="oklch(0.3 0.013 286)" strokeDasharray="3 3" />
+                  <ReferenceArea y1={0} y2={33} fill="var(--tilt-green)" fillOpacity={0.08} />
+                  <ReferenceArea y1={34} y2={66} fill="var(--tilt-yellow)" fillOpacity={0.08} />
+                  <ReferenceArea y1={67} y2={100} fill="var(--tilt-red)" fillOpacity={0.08} />
                   <XAxis
                     dataKey="game"
                     stroke="oklch(0.6 0.013 286)"
@@ -444,8 +383,15 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
                     }}
                   />
                   <YAxis
+                    domain={[0, 100]}
                     stroke="oklch(0.6 0.013 286)"
                     tick={{ fontSize: 11, fontFamily: "JetBrains Mono" }}
+                    ticks={[0, 33, 66, 100]}
+                    tickFormatter={(value) => {
+                      if (value === 0) return "Calm";
+                      if (value === 100) return "Tilting";
+                      return String(value);
+                    }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -456,46 +402,22 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
                       fontSize: 12,
                     }}
                     labelFormatter={(g) => `Game ${g}`}
+                    content={<TrendTooltip />}
                   />
                   <Line
                     type="monotone"
-                    dataKey="kda"
-                    stroke="var(--tilt-red)"
+                    dataKey="tiltScore"
+                    stroke="var(--foreground)"
                     strokeWidth={2.5}
-                    dot={{ r: 4, fill: "var(--tilt-red)" }}
-                    name="KDA"
+                    dot={<TrendDot />}
+                    activeDot={<TrendDot active />}
+                    name="Tilt Score"
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="csPerMin"
-                    stroke="var(--tilt-yellow)"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    name="CS/min"
-                  />
-                  {analysis.tiltInflectionIndex !== null && (
-                    <ReferenceDot
-                      x={analysis.trend[analysis.tiltInflectionIndex]?.game}
-                      y={analysis.trend[analysis.tiltInflectionIndex]?.kda}
-                      r={8}
-                      fill="var(--tilt-red)"
-                      stroke="var(--tilt-red)"
-                      strokeOpacity={0.3}
-                      strokeWidth={6}
-                      label={{
-                        value: "TILT POINT",
-                        position: "top",
-                        fill: "var(--tilt-red)",
-                        fontSize: 10,
-                        fontFamily: "JetBrains Mono",
-                      }}
-                    />
-                  )}
                 </LineChart>
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center text-sm text-muted-foreground font-mono">
-                Current session has fewer than 2 games, so there is not enough trend data yet.
+                Not enough ranked games yet to calculate a tilt score trend.
               </div>
             )}
           </div>
@@ -557,6 +479,112 @@ function FooterStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+type TrendPoint = TiltAnalysis["trend"][number] & {
+  tiltScore: number;
+};
+
+interface DotProps {
+  cx?: number;
+  cy?: number;
+  payload?: TrendPoint;
+  active?: boolean;
+}
+
+function TrendDot({ cx, cy, payload, active }: DotProps) {
+  if (cx === undefined || cy === undefined || !payload) return null;
+
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={active ? 6 : 4}
+      fill={payload.win ? "var(--tilt-green)" : "var(--tilt-red)"}
+      stroke="oklch(0.145 0.01 285)"
+      strokeWidth={2}
+    />
+  );
+}
+
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    name?: string;
+    value?: number;
+    color?: string;
+    payload?: TrendPoint;
+  }>;
+  label?: string | number;
+}
+
+function TrendTooltip({ active, payload, label }: TooltipProps) {
+  if (!active || !payload?.length) return null;
+
+  const point = payload[0].payload;
+  if (!point) return null;
+
+  return (
+    <div className="rounded-lg border border-border bg-zinc-900 px-3 py-2 font-mono text-xs shadow-xl">
+      <div className="mb-1 text-zinc-400">Game {label}</div>
+      <div className="font-bold text-foreground">{point.champion}</div>
+      <div className={point.win ? "text-tilt-green" : "text-tilt-red"}>
+        {point.win ? "Victory" : "Defeat"}
+      </div>
+      <div className="mt-2 space-y-1">
+        <div className="flex items-center justify-between gap-5">
+          <span style={{ color: "var(--foreground)" }}>Tilt Score</span>
+          <span className="text-foreground">{point.tiltScore}</span>
+        </div>
+        <div className="flex items-center justify-between gap-5">
+          <span style={{ color: "var(--tilt-red)" }}>KDA</span>
+          <span className="text-foreground">{point.kda.toFixed(2)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-5">
+          <span style={{ color: "var(--tilt-yellow)" }}>CS/min</span>
+          <span className="text-foreground">{point.csPerMin.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getMoodImage(analysis: TiltAnalysis) {
+  if (analysis.level === "red") {
+    return { src: "/img/mad.png", alt: "Tilted mood" };
+  }
+
+  if (analysis.metrics.currentStreak >= 2) {
+    return { src: "/img/happy.png", alt: "Happy mood" };
+  }
+
+  return { src: "/img/calm.png", alt: "Calm mood" };
+}
+
+function buildTiltScoreData(trend: TiltAnalysis["trend"]): TrendPoint[] {
+  const baselineKda = avg(trend.map((game) => game.kda));
+  const baselineCs = avg(trend.map((game) => game.csPerMin));
+
+  return trend.map((game) => {
+    const kdaRatio = baselineKda > 0 ? game.kda / baselineKda : 1;
+    const csRatio = baselineCs > 0 ? game.csPerMin / baselineCs : 1;
+    const winModifier = game.win ? -10 : 15;
+    const score =
+      50 +
+      (1 - kdaRatio) * 25 +
+      (1 - csRatio) * 15 +
+      winModifier;
+
+    return {
+      ...game,
+      tiltScore: Math.max(0, Math.min(100, Math.round(score))),
+    };
+  });
+}
+
+function avg(values: number[]) {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
 function fmtStreak(streak: number) {
   if (streak === 0) return "-";
   return `${streak > 0 ? "W" : "L"}${Math.abs(streak)}`;
@@ -571,32 +599,55 @@ function sessionLabel(ms: number) {
   return `${d}d ago`;
 }
 
-function regionValueFromLabel(label: string): RegionValue {
-  return REGIONS.find((region) => region.label === label)?.value ?? DEFAULT_REGION;
+function sessionTimestamp(ms: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(ms));
 }
 
-function labelFromRegionValue(value: RegionValue) {
-  return REGIONS.find((region) => region.value === value)?.label ?? "NA1";
+function getRecentTimelineSessions(sessions: Session[], maxGames: number) {
+  let remaining = maxGames;
+
+  return [...sessions]
+    .sort((a, b) => b.endMs - a.endMs)
+    .map((session) => {
+      const matches = [...session.matches]
+        .sort((a, b) => b.gameEndMs - a.gameEndMs)
+        .slice(0, remaining);
+      remaining -= matches.length;
+
+      return {
+        ...session,
+        startMs: matches[matches.length - 1]
+          ? matches[matches.length - 1].gameEndMs -
+            matches[matches.length - 1].durationSec * 1000
+          : session.startMs,
+        endMs: matches[0]?.gameEndMs ?? session.endMs,
+        matches,
+      };
+    })
+    .filter((session) => session.matches.length > 0);
 }
 
-function buildLocalSuggestions(query: string, selectedRegion: RegionValue): SummonerSuggestion[] {
-  const clean = query.trim().replace(/\s+/g, " ");
-  if (!clean) return [];
+async function analyzeRiotAccount(gameName: string, tagLine: string) {
+  const params = new URLSearchParams({ gameName, tagLine });
+  const res = await fetch(`/api/analyze?${params.toString()}`);
+  const data = (await res.json().catch(() => ({}))) as {
+    account?: { puuid: string; gameName: string; tagLine: string };
+    analysis?: TiltAnalysis;
+    message?: string;
+  };
 
-  const [namePart, tagPart] = clean.split("#");
-  const gameName = namePart.trim();
-  const selectedLabel = labelFromRegionValue(selectedRegion);
-  const tags = tagPart
-    ? [tagPart.trim().toUpperCase()]
-    : [selectedLabel, "NA1", "EUW", "KR"].filter(
-        (tag, index, all) => tag && all.indexOf(tag) === index
-      );
+  if (res.status === 404) {
+    throw new Error("Account doesn't exist.");
+  }
 
-  return tags.slice(0, 4).map((tag) => ({
-    riotId: `${gameName}#${tag}`,
-    gameName,
-    tagLine: tag,
-    region: selectedLabel,
-    puuid: `${gameName}-${tag}`,
-  }));
+  if (!res.ok || !data.account || !data.analysis) {
+    throw new Error(data.message ?? "Could not analyze this account.");
+  }
+
+  return { account: data.account, analysis: data.analysis };
 }
