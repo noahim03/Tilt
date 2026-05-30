@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+client/node_modules/
+functions/node_modules/
+
+# Build output
+client/dist/
+functions/lib/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+
+# Local dev secrets — NEVER commit
+.env/*.env
+!.env/*.env.example
+
+# Legacy env locations (removed)
+functions/.runtimeconfig.json
+.env
+.env.local
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,12 @@
+{
+  "name": "tilt-detector",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n functions,client -c magenta,cyan \"npm run dev --prefix functions\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix functions && npm run build --prefix client",
+    "deploy": "npm run build && firebase deploy"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
