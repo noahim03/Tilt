@@ -80,14 +80,27 @@ export default function App() {
     void runAnalysis();
   };
 
+  const goHome = () => {
+    setGameName("");
+    setTagLine("");
+    setAnalysis(null);
+    setError(null);
+    setLoading(false);
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground font-display selection:bg-tilt-red/30">
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="size-8 bg-tilt-red rounded-sm flex items-center justify-center font-bold text-background tracking-tighter italic">
+            <button
+              type="button"
+              onClick={goHome}
+              aria-label="Go to home screen"
+              className="size-8 bg-tilt-red rounded-sm flex items-center justify-center font-bold text-background tracking-tighter italic cursor-pointer transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-tilt-red/50 focus:ring-offset-2 focus:ring-offset-background"
+            >
               TD
-            </div>
+            </button>
             <span className="font-bold tracking-tight text-lg uppercase">
               Tilt Detector
             </span>
@@ -295,7 +308,7 @@ function Diagnostics({ analysis }: { analysis: TiltAnalysis }) {
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Stat label="Streak" value={fmtStreak(m.currentStreak)} bad={m.currentStreak <= -2} />
-              <Stat label="Sessions Today" value={String(m.sessionsToday)} />
+              <Stat label="Games Today" value={String(m.gamesToday)} />
               <Stat
                 label="CS/min Delta"
                 value={`${m.csPerMinDelta > 0 ? "+" : ""}${m.csPerMinDelta}%`}

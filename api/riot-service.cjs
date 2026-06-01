@@ -97,9 +97,7 @@ function analyze(matches, summoner) {
     ? todayMatches.filter((match) => match.win).length / todayMatches.length
     : overallWR;
   const winRateDelta = (todayWR - overallWR) * 100;
-  const sessionsToday = sessions.filter(
-    (session) => session.endMs >= todayStart.getTime()
-  ).length;
+  const gamesToday = todayMatches.length;
 
   let csPerMinDelta = 0;
   let kdaDelta = 0;
@@ -194,7 +192,7 @@ function analyze(matches, summoner) {
     verdict,
     metrics: {
       currentStreak: streak,
-      sessionsToday,
+      gamesToday,
       winRateDelta: +winRateDelta.toFixed(1),
       csPerMinDelta: +csPerMinDelta.toFixed(1),
       kdaDelta: +kdaDelta.toFixed(1),

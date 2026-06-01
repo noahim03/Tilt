@@ -27,7 +27,7 @@ export type TiltAnalysis = {
   verdict: string;
   metrics: {
     currentStreak: number; // negative = losses, positive = wins
-    sessionsToday: number;
+    gamesToday: number;
     winRateDelta: number; // percentage diff vs overall
     csPerMinDelta: number;
     kdaDelta: number;
@@ -99,7 +99,7 @@ export function analyze(
   const todayMatches = matches.filter((m) => m.gameEndMs >= todayStart.getTime());
   const todayWR = todayMatches.length ? todayMatches.filter((m) => m.win).length / todayMatches.length : overallWR;
   const winRateDelta = (todayWR - overallWR) * 100;
-  const sessionsToday = sessions.filter((s) => s.endMs >= todayStart.getTime()).length;
+  const gamesToday = todayMatches.length;
 
   let csPerMinDelta = 0;
   let kdaDelta = 0;
@@ -183,7 +183,7 @@ export function analyze(
     verdict,
     metrics: {
       currentStreak: streak,
-      sessionsToday,
+      gamesToday,
       winRateDelta: +winRateDelta.toFixed(1),
       csPerMinDelta: +csPerMinDelta.toFixed(1),
       kdaDelta: +kdaDelta.toFixed(1),
