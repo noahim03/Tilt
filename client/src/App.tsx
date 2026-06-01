@@ -80,6 +80,8 @@ export default function App() {
     void runAnalysis();
   };
 
+  const playerNotFound = error === "Account doesn't exist.";
+
   const goHome = () => {
     setGameName("");
     setTagLine("");
@@ -152,7 +154,8 @@ export default function App() {
       </nav>
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-        {!analysis && !loading && <EmptyState error={error} />}
+        {!analysis && !loading && playerNotFound && <PlayerNotFound onBack={goHome} />}
+        {!analysis && !loading && !playerNotFound && <EmptyState error={error} />}
         {loading && <SkeletonState />}
         {analysis && <Diagnostics analysis={analysis} />}
       </main>
@@ -169,6 +172,38 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function PlayerNotFound({ onBack }: { onBack: () => void }) {
+  return (
+    <section className="min-h-[60vh] flex items-center justify-center animate-reveal">
+      <div className="w-full max-w-xl border border-tilt-red/40 bg-zinc-900/50 rounded-xl p-8 md:p-10 text-center">
+        <img
+          src="/img/error.png"
+          alt="Player not found"
+          className="mx-auto mb-6 max-h-56 w-auto object-contain drop-shadow-2xl"
+        />
+        <span className="font-mono text-xs uppercase tracking-[0.3em] text-tilt-red mb-3 block">
+          Lookup Failed
+        </span>
+        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4">
+          Player Does Not Exist
+        </h1>
+        <p className="text-zinc-400 leading-relaxed mb-8">
+          That Riot ID could not be found. Check the summoner name and tag, then
+          try again.
+        </p>
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-black/40 px-4 py-2 font-mono text-sm font-bold uppercase tracking-tight text-foreground transition-colors hover:border-tilt-red/60 hover:text-tilt-red"
+        >
+          <span aria-hidden="true">&larr;</span>
+          Back to homescreen
+        </button>
+      </div>
+    </section>
   );
 }
 
