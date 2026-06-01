@@ -80,7 +80,7 @@ export default function App() {
     void runAnalysis();
   };
 
-  const playerNotFound = error === "Account doesn't exist.";
+  const playerNotFound = isPlayerNotFoundError(error);
 
   const goHome = () => {
     setGameName("");
@@ -690,7 +690,7 @@ async function analyzeRiotAccount(gameName: string, tagLine: string) {
   };
 
   if (res.status === 404) {
-    throw new Error("Account doesn't exist.");
+    throw new Error(data.message ?? "Account doesn't exist.");
   }
 
   if (!res.ok || !data.account || !data.analysis) {
@@ -698,4 +698,11 @@ async function analyzeRiotAccount(gameName: string, tagLine: string) {
   }
 
   return { account: data.account, analysis: data.analysis };
+}
+
+function isPlayerNotFoundError(error: string | null) {
+  if (!error) return false;
+  return /account doesn't exist|account does not exist|player doesn't exist|player does not exist|not found/i.test(
+    error
+  );
 }
