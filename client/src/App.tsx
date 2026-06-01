@@ -702,7 +702,7 @@ async function analyzeRiotAccount(gameName: string, tagLine: string) {
 
 function isPlayerNotFoundError(error: string | null) {
   if (!error) return false;
-  return /account doesn't exist|account does not exist|player doesn't exist|player does not exist|not found/i.test(
+  return /account doesn't exist|account does not exist|player doesn't exist|player does not exist|not found|api key is invalid or expired/i.test(
     error
   );
 }
