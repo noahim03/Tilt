@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { analyzeRiotPlayer, getAccount } = require("../api/riot-service.cjs");
+const { analyzeRiotPlayer, getAccount } = require("../server/riot-service.cjs");
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function getLocalRiotApiKey() {

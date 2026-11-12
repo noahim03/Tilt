@@ -1,6 +1,37 @@
 {
   "installCommand": "npm install",
-  "buildCommand": "npm run build",
-  "outputDirectory": "client/dist",
-  "framework": "vite"
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "client/dist"
+      }
+    },
+    {
+      "src": "server/analyze.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "server/riot-account.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/analyze",
+      "dest": "/server/analyze.js"
+    },
+    {
+      "src": "/api/riot-account",
+      "dest": "/server/riot-account.js"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
 }
